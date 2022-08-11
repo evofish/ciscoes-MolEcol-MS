@@ -1,0 +1,196 @@
+##script for estimating the molecular diversity indeces
+
+library(vcfR)
+library(adegenet)
+library(pcadapt)
+library(ggplot2)
+library(pegas)
+library (ape)
+library(hierfstat)
+
+
+setwd('~/Desktop/coregonids-transcriptomes/cisco-snps/')
+cisco<-read.vcfR('cisco-snps-filter3-thin-NOCZ8.recode.vcf') 
+
+cisco.gen<-vcfR2genind(cisco)
+cisco.gen
+
+#including populations in genind
+pops<-c(rep("Zen",7), rep("Kiy",8), rep("Hoy",8), rep("Art",8))
+cisco.gen@pop<-as.factor(rep(pops))
+cisco.gen@pop
+
+cisco.gen
+
+sum<-summary(cisco.gen) #very large file, confirms pops are there 
+head(sum, n=5)
+
+base<-basic.stats(cisco.gen) #gives indexes for whole dataset
+#Ho      Hs      Ht     Dst     Htp    Dstp     Fst    Fstp     Fis    Dest 
+#0.2695  0.2245  0.2274  0.0030  0.2284  0.0039  0.0130  0.0173 -0.2006  0.0051 
+
+boot.vc(cisco.h[,1],cisco.h[,-c(1:2)]) #gives actual confidence intervals for Fst and Fis, report the average of all measures
+#H-Total F-Pop/Total F-Ind/Total H-Pop F-Ind/Pop   Hobs
+#2.5%   0.2661      0.0139     -0.2527 0.262   -0.2720 0.3283
+#50%    0.2702      0.0155     -0.2399 0.266   -0.2594 0.3352
+#97.5%  0.2743      0.0174     -0.2285 0.270   -0.2481 0.3419
+
+base2<-as.matrix(base.pop) #allows exporting as table
+write.table(base2, file="diversity-indexes-cisco-May19.txt", quote=FALSE, sep='\t')
+
+##analyses with HierFstat in R
+diff<-fstat(cisco.gen)
+diff
+#pop        Ind
+#Total 0.01753703 -0.1795115
+#pop   0.00000000 -0.2005659
+
+gtest<- gstat.randtest(cisco.gen,nsim=99) #should be increased to 500 - This G-statistic Monte Carlo procedure tests for population structuring at different levels.
+gtest
+#Monte-Carlo test
+#Call: gstat.randtest(x = cisco.gen, nsim = 99)
+#Observation: 24222.84 f
+#Based on 99 replicates
+#Simulated p-value: 0.01 
+#Alternative hypothesis: greater 
+#Std.Obs Expectation    Variance 
+#13.45813 20141.39456 91972.42984 
+
+cisco.h<-genind2hierfstat(cisco.gen) #converts from geneind to hierfstat
+
+pairwise.WCfst(cisco.h) #Fst based on Weir Cockerham correction, will choose this one for the paper
+#for 7k genes (orthologous dataset)
+#Art           Hoy        Kiy           Zen
+#Art         NA  0.0144271430 0.02287007  0.0158678899
+#Hoy 0.01442714            NA 0.01879335 -0.0005011088
+#Kiy 0.02287007  0.0187933460         NA  0.0212975330
+#Zen 0.01586789 -0.0005011088 0.02129753            NA
+
+#for 22k genes - actual results for paper 
+#Art           Hoy        Kiy           Zen
+#Art         NA  0.0154960593 0.02412497  0.0165957459
+#Hoy 0.01549606            NA 0.02338417 -0.0007477776
+#Kiy 0.02412497  0.0233841697         NA  0.0253224171
+#Zen 0.01659575 -0.0007477776 0.02532242            NA
+
+#confidence intervals for Fst measure, here zen is pop1 and art is pop4
+pop<-cisco.h[,1]
+pop<-factor(pop)
+x<-sample(dim(cisco.h)[1])
+
+#boots<-boot.ppfst(cisco.h, nboot=100, quant=c(0.025, 0.975), dig=4)# command suggested in the manual, increase boot to 999 when running 
+boots<-boot.ppfst(data.frame(sort(as.numeric(pop)),cisco.h[,-c(1:2)]))#this first part only allows running the geneind file and runs it on default
+boots<-boot.ppfst(data.frame(sort(as.numeric(pop)),cisco.h[,-c(1:2)]), nboot=100, quant=c(0.025, 0.975))
+
+boots$ll
+
+#boots 
+#Upper limit above diagonal 
+#Lower limit below diagonal 
+#        Zen         kiy           hoy        art
+#zen           NA 0.012586708 0.000646152 0.01632896
+#kiy  0.008161015          NA 0.013008097 0.02409417
+#hoy -0.002931110 0.008340995          NA 0.01520952
+#art  0.010184919 0.017566201 0.009521815         NA
+
+genet.dist(cisco.h) #genetic distances between populations as described mostly in Takezaki & Nei (1996)
+#       1          2          3
+#2 0.02390640                      
+#3 0.02565811 0.02580787           
+#4 0.02589533 0.02152247 0.02721469
+
+#nei's distance by sample 
+genet.dist(cisco.gen)
+
+freqs<-pop.freq(cisco.h) #population allele frequences by each locus
+
+#this is the conversion to genpop file
+cisco.pop<- genind2genpop(cisco.gen, pop = c(rep("Zen",7), rep("Kiy",8), rep("Hoy",8), rep("Art",8)))
+popNames(cisco.pop)
+
+Hs(cisco.pop) #heterozygosity per population 
+#Zen       Kiy       Hoy       Art 
+#0.2351241 0.2181278 0.2325045 0.2165995 
+Ht(cisco.pop)
+
+#allele depth graph
+depth<-extract.gt(cisco, element='AD', as.numeric = TRUE) #extracting the depth of each marker
+par(mar=c(1,1,1,1))
+boxplot(depth, las=3, col=c("#C0C0C0", "#808080"), ylab="Allele Depth", las=2)
+
+#Qual histogram 
+plot(cisco.sub)
+
+##PCadapt
+    #PCA
+cisco<-read.pcadapt('cisco-snps-overlapping-orthos_NoCZ08-may17-2019.vcf', type='vcf')
+x <- pcadapt(cisco, K = 10) 
+plot(x, option='screeplot', K=10) #suggests best k=3
+pop.cisco<-c(rep("Zen",7), rep("Kiy",8), rep("Hoy",8), rep("Art",8))
+print(pop.cisco)
+plot(x, option = "scores", pop = pop.cisco, label=TRUE, label.size = 4) #PC1=21.02% PC2=19.98
+x #type x to get the values of the first 2 PC scores. Copy and paste and export as a table - draw PCA along 2 other datasets
+
+###for finding outliers 
+x <- pcadapt(cisco, K =3) #based on the result above
+summary(x)
+plot(x , option = "manhattan", k=3, threshold=0.10)
+plot(x, option = "qqplot")
+
+y <-outlier(x,K=3,threshold=0.1)
+
+##Adegenet DAPC and Fstat
+cisco<-read.vcfR('cisco-snps-overlapping-orthos_NoCZ08-may17-2019.vcf')
+
+cisco.gen<-vcfR2genlight(cisco) #converts the matrix to Genlight format for adegenet
+pop(cisco.gen)<- c(rep("Zen",7), rep("Kiy",8), rep("Hoy",8), rep("Art",8)) #stores population information in Adegenet
+x.dist<-dist(cisco.gen)
+
+#dapc 
+grp <- find.clusters(cisco.gen, max.n.clust=10) #retained 10 PCs and K kept at 4
+dapc1<-dapc(cisco.gen, grp$grp) # retained 10PCs , Chose 3DF 
+scatter(dapc1,scree.da=FALSE, bg="white", posi.pca="topright", legend=TRUE,
+        txt.leg=paste("group", 1:3), col=c("red","blue", "gold", "green")) #graph test1 dapc
+compoplot(dapc1, col=c("red","blue", "gold", "green"),lab="", txt.leg=paste("group", 1:4), ncol=4) #test of composition plot similar to structure 
+
+##an alternative for Migrate N of Hoyi and Zenithicus
+vcfR2migrate(vcf, pop, in_pop, out_file = "MigrateN_infile.txt", method = c("N", "H"))
+
+#test for bootstrapvalues 
+#rr<-boot.ppfst(nancycats, nboot=10, quant=c(0.025,0.975))
+
+#estimates with mmod - results were not good, avoid
+library(poppr)
+library(mmod)
+diff_stats(cisco.gen)
+pairwise_Gst_Nei (cisco.gen)
+pairwise_Gst_Hedrick (cisco.gen, linearized=FALSE)
+Phi_st_Meirmans(cisco.gen)
+
+#this is an effort to get p-values from boostrap estimates
+#resample with 25 individuals at a time - this takes a huge amount of time (5 days)
+library(dplyr)
+nrow(cisco.h)
+#function to take 20 random rows using dplyr 
+pickRandomRows = function(df, numberOfRows = 31) {
+  df %>% slice(runif(numberOfRows,0, length(df[,1])))
+}
+xx<-cisco.h %>% pickRandomRows (15)
+
+mat.obs <- pairwise.fst(cisco.h) 
+NBPERM <- 999 
+mat.perm <- lapply(1:NBPERM, function(i) pairwise.WCfst(cisco.h %>% pickRandomRows (25))) #25 random rows of the dataset will be picked
+mean(c(mat.obs[1,2] < na.omit(sapply(1:NBPERM, function(i) mat.perm[[i]][1,2])), TRUE)) #this is just the p-value
+
+library(ade4)
+test12 <- as.randtest(na.omit(sapply(1:NBPERM, function(i) mat.perm[[i]][1,2])), mat.obs[1,2], alter="greater")
+test12
+
+allTests <- list()
+for(i in 1:(nrow(mat.obs)-1)){
+  for(j in 2:nrow(mat.obs)){
+    allTests[[paste(rownames(mat.obs)[i],rownames(mat.obs)[j],sep="-")]] <- as.randtest(na.omit(sapply(1:NBPERM, function(k) mat.perm[[k]][i,j])), mat.obs[i,j], alter="greater")
+  }
+}
+
+cisco.clust<-find.clusters(cisco.gen)
