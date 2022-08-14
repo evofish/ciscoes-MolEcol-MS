@@ -39,6 +39,7 @@ base2<-as.matrix(base.pop) #allows exporting as table
 write.table(base2, file="diversity-indexes-cisco-May19.txt", quote=FALSE, sep='\t')
 
 ##analyses with HierFstat in R
+
 diff<-fstat(cisco.gen)
 diff
 #pop        Ind
@@ -57,47 +58,6 @@ gtest
 #13.45813 20141.39456 91972.42984 
 
 cisco.h<-genind2hierfstat(cisco.gen) #converts from geneind to hierfstat
-
-pairwise.WCfst(cisco.h) #Fst based on Weir Cockerham correction, will choose this one for the paper
-#for 7k genes (orthologous dataset)
-#Art           Hoy        Kiy           Zen
-#Art         NA  0.0144271430 0.02287007  0.0158678899
-#Hoy 0.01442714            NA 0.01879335 -0.0005011088
-#Kiy 0.02287007  0.0187933460         NA  0.0212975330
-#Zen 0.01586789 -0.0005011088 0.02129753            NA
-
-#for 22k genes - actual results for paper 
-#Art           Hoy        Kiy           Zen
-#Art         NA  0.0154960593 0.02412497  0.0165957459
-#Hoy 0.01549606            NA 0.02338417 -0.0007477776
-#Kiy 0.02412497  0.0233841697         NA  0.0253224171
-#Zen 0.01659575 -0.0007477776 0.02532242            NA
-
-#confidence intervals for Fst measure, here zen is pop1 and art is pop4
-pop<-cisco.h[,1]
-pop<-factor(pop)
-x<-sample(dim(cisco.h)[1])
-
-#boots<-boot.ppfst(cisco.h, nboot=100, quant=c(0.025, 0.975), dig=4)# command suggested in the manual, increase boot to 999 when running 
-boots<-boot.ppfst(data.frame(sort(as.numeric(pop)),cisco.h[,-c(1:2)]))#this first part only allows running the geneind file and runs it on default
-boots<-boot.ppfst(data.frame(sort(as.numeric(pop)),cisco.h[,-c(1:2)]), nboot=100, quant=c(0.025, 0.975))
-
-boots$ll
-
-#boots 
-#Upper limit above diagonal 
-#Lower limit below diagonal 
-#        Zen         kiy           hoy        art
-#zen           NA 0.012586708 0.000646152 0.01632896
-#kiy  0.008161015          NA 0.013008097 0.02409417
-#hoy -0.002931110 0.008340995          NA 0.01520952
-#art  0.010184919 0.017566201 0.009521815         NA
-
-genet.dist(cisco.h) #genetic distances between populations as described mostly in Takezaki & Nei (1996)
-#       1          2          3
-#2 0.02390640                      
-#3 0.02565811 0.02580787           
-#4 0.02589533 0.02152247 0.02721469
 
 #nei's distance by sample 
 genet.dist(cisco.gen)
@@ -153,44 +113,3 @@ scatter(dapc1,scree.da=FALSE, bg="white", posi.pca="topright", legend=TRUE,
         txt.leg=paste("group", 1:3), col=c("red","blue", "gold", "green")) #graph test1 dapc
 compoplot(dapc1, col=c("red","blue", "gold", "green"),lab="", txt.leg=paste("group", 1:4), ncol=4) #test of composition plot similar to structure 
 
-##an alternative for Migrate N of Hoyi and Zenithicus
-vcfR2migrate(vcf, pop, in_pop, out_file = "MigrateN_infile.txt", method = c("N", "H"))
-
-#test for bootstrapvalues 
-#rr<-boot.ppfst(nancycats, nboot=10, quant=c(0.025,0.975))
-
-#estimates with mmod - results were not good, avoid
-library(poppr)
-library(mmod)
-diff_stats(cisco.gen)
-pairwise_Gst_Nei (cisco.gen)
-pairwise_Gst_Hedrick (cisco.gen, linearized=FALSE)
-Phi_st_Meirmans(cisco.gen)
-
-#this is an effort to get p-values from boostrap estimates
-#resample with 25 individuals at a time - this takes a huge amount of time (5 days)
-library(dplyr)
-nrow(cisco.h)
-#function to take 20 random rows using dplyr 
-pickRandomRows = function(df, numberOfRows = 31) {
-  df %>% slice(runif(numberOfRows,0, length(df[,1])))
-}
-xx<-cisco.h %>% pickRandomRows (15)
-
-mat.obs <- pairwise.fst(cisco.h) 
-NBPERM <- 999 
-mat.perm <- lapply(1:NBPERM, function(i) pairwise.WCfst(cisco.h %>% pickRandomRows (25))) #25 random rows of the dataset will be picked
-mean(c(mat.obs[1,2] < na.omit(sapply(1:NBPERM, function(i) mat.perm[[i]][1,2])), TRUE)) #this is just the p-value
-
-library(ade4)
-test12 <- as.randtest(na.omit(sapply(1:NBPERM, function(i) mat.perm[[i]][1,2])), mat.obs[1,2], alter="greater")
-test12
-
-allTests <- list()
-for(i in 1:(nrow(mat.obs)-1)){
-  for(j in 2:nrow(mat.obs)){
-    allTests[[paste(rownames(mat.obs)[i],rownames(mat.obs)[j],sep="-")]] <- as.randtest(na.omit(sapply(1:NBPERM, function(k) mat.perm[[k]][i,j])), mat.obs[i,j], alter="greater")
-  }
-}
-
-cisco.clust<-find.clusters(cisco.gen)
