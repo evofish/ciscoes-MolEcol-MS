@@ -1,3 +1,6 @@
+##script for summarizing the GO annotation for the C. artedi transcriptome. 
+##the script for the GO analysis is available at: https://github.com/z0on/GO_MWU
+
 library(dplyr)
 
 setwd('~/Desktop/')
